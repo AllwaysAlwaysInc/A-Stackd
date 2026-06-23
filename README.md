@@ -131,6 +131,10 @@ test/               Vitest unit + route + postgres tests
 
 ## Deployment
 
+- **Render:** `render.yaml` is a Blueprint — in Render, New → Blueprint → pick
+  this repo → Apply. It provisions a web service + managed Postgres, generates
+  `JWT_SECRET`, wires `DATABASE_URL`, runs migrations on boot, and health-checks
+  `/health`.
 - **Docker:** `docker compose up --build` runs app + Postgres locally.
 - **Heroku:** the `Procfile` runs `migrate` on release and `node dist/index.js`
   for web. Set `JWT_SECRET` and attach a Postgres add-on (`DATABASE_URL`).
