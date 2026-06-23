@@ -1,0 +1,36 @@
+{
+  "expo": {
+    "name": "A Stack'd",
+    "slug": "astackd",
+    "version": "1.0.0",
+    "orientation": "portrait",
+    "icon": "./assets/icon.png",
+    "scheme": "astackd",
+    "userInterfaceStyle": "dark",
+    "backgroundColor": "#0B0B0F",
+    "splash": {
+      "backgroundColor": "#0B0B0F",
+      "resizeMode": "contain",
+      "image": "./assets/splash-icon.png"
+    },
+    "ios": {
+      "supportsTablet": true,
+      "bundleIdentifier": "com.allwaysalways.astackd"
+    },
+    "android": {
+      "package": "com.allwaysalways.astackd",
+      "adaptiveIcon": {
+        "backgroundColor": "#0B0B0F",
+        "foregroundImage": "./assets/android-icon-foreground.png",
+        "monochromeImage": "./assets/android-icon-monochrome.png"
+      },
+      "predictiveBackGestureEnabled": false
+    },
+    "web": {
+      "favicon": "./assets/favicon.png"
+    },
+    "extra": {
+      "apiUrl": "https://astackd-backend.onrender.com"
+    }
+  }
+}
