@@ -1,7 +1,11 @@
 import type { TypeBoxTypeProvider } from "@fastify/type-provider-typebox";
 import type { FastifyInstance } from "fastify";
+import {
+  BuyTicketBodySchema,
+  BuyTicketResponseSchema,
+  TicketsResponseSchema,
+} from "../schemas.js";
 import type { DataStore } from "../store/types.js";
-import { BuyTicketBodySchema, BuyTicketResponseSchema } from "../schemas.js";
 
 export function ticketRoutes(store: DataStore) {
   return async function (fastify: FastifyInstance) {
@@ -30,6 +34,16 @@ export function ticketRoutes(store: DataStore) {
           seats: result.seats,
           msg: `Ticket secured on the floor. [${result.seats}] seats claimed.`,
         };
+      },
+    );
+
+    // --- GET MY TICKETS ---
+    app.get(
+      "/tickets",
+      { schema: { response: { 200: TicketsResponseSchema } } },
+      async (request) => {
+        const tickets = await store.ticketsForUser(request.userId);
+        return { tickets };
       },
     );
   };

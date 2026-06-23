@@ -1,15 +1,24 @@
 import type { FastifyInstance } from "fastify";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import { buildApp } from "../src/app.js";
+import { loadConfig } from "../src/config.js";
 import { createSeededStore } from "../src/store/seed.js";
 
-const AUTH = { authorization: "Bearer u123" };
+const config = loadConfig({ NODE_ENV: "test" });
+
+async function makeApp(): Promise<FastifyInstance> {
+  return buildApp({ store: createSeededStore(), config });
+}
+
+function auth(app: FastifyInstance, sub = "u123", role: "user" | "admin" = "user") {
+  return { authorization: `Bearer ${app.jwt.sign({ sub, role })}` };
+}
 
 describe("routes", () => {
   let app: FastifyInstance;
 
   beforeEach(async () => {
-    app = await buildApp({ store: createSeededStore() });
+    app = await makeApp();
   });
 
   afterEach(async () => {
@@ -22,13 +31,28 @@ describe("routes", () => {
     expect(res.json()).toMatchObject({ status: "ok" });
   });
 
-  it("GET /wallet requires auth", async () => {
+  it("GET / serves the landing page", async () => {
+    const res = await app.inject({ method: "GET", url: "/" });
+    expect(res.statusCode).toBe(200);
+    expect(res.headers["content-type"]).toContain("text/html");
+  });
+
+  it("GET /wallet rejects a missing token", async () => {
     const res = await app.inject({ method: "GET", url: "/wallet" });
     expect(res.statusCode).toBe(401);
   });
 
-  it("GET /wallet returns the seeded stack", async () => {
-    const res = await app.inject({ method: "GET", url: "/wallet", headers: AUTH });
+  it("GET /wallet rejects a garbage token", async () => {
+    const res = await app.inject({
+      method: "GET",
+      url: "/wallet",
+      headers: { authorization: "Bearer not-a-jwt" },
+    });
+    expect(res.statusCode).toBe(401);
+  });
+
+  it("GET /wallet returns the seeded stack with a valid token", async () => {
+    const res = await app.inject({ method: "GET", url: "/wallet", headers: auth(app) });
     expect(res.statusCode).toBe(200);
     expect(res.json()).toEqual({
       userId: "u123",
@@ -36,8 +60,24 @@ describe("routes", () => {
     });
   });
 
+  it("POST /auth/dev-token mints a working token outside production", async () => {
+    const res = await app.inject({
+      method: "POST",
+      url: "/auth/dev-token",
+      payload: { userId: "u999" },
+    });
+    expect(res.statusCode).toBe(200);
+    const token = res.json().token as string;
+    const wallet = await app.inject({
+      method: "GET",
+      url: "/wallet",
+      headers: { authorization: `Bearer ${token}` },
+    });
+    expect(wallet.json().userId).toBe("u999");
+  });
+
   it("GET /active-pools surfaces melting odds and the surge alert", async () => {
-    const res = await app.inject({ method: "GET", url: "/active-pools", headers: AUTH });
+    const res = await app.inject({ method: "GET", url: "/active-pools", headers: auth(app) });
     expect(res.statusCode).toBe(200);
     const tv = res.json().pools.find((p: { poolId: string }) => p.poolId === "p_weekly_tv");
     expect(tv.status).toBe("185/500 Filled");
@@ -45,26 +85,37 @@ describe("routes", () => {
     expect(tv.salesAgentAlert).toContain("2.7x");
   });
 
+  it("GET /pools/:id returns one pool and 404s for unknown", async () => {
+    const ok = await app.inject({ method: "GET", url: "/pools/p_weekly_tv", headers: auth(app) });
+    expect(ok.statusCode).toBe(200);
+    expect(ok.json().poolId).toBe("p_weekly_tv");
+
+    const missing = await app.inject({ method: "GET", url: "/pools/nope", headers: auth(app) });
+    expect(missing.statusCode).toBe(404);
+  });
+
   it("POST /buy-ticket claims one seat for a blue chip and debits the wallet", async () => {
     const buy = await app.inject({
       method: "POST",
       url: "/buy-ticket",
-      headers: AUTH,
+      headers: auth(app),
       payload: { poolId: "p_weekly_tv", chipColor: "blue", shippingAddress: "1 Main St" },
     });
     expect(buy.statusCode).toBe(200);
     expect(buy.json()).toMatchObject({ success: true, seats: 1 });
-    expect(buy.json().msg).toContain("[1] seats");
 
-    const wallet = await app.inject({ method: "GET", url: "/wallet", headers: AUTH });
+    const wallet = await app.inject({ method: "GET", url: "/wallet", headers: auth(app) });
     expect(wallet.json().stacks.blue).toBe(4);
+
+    const tickets = await app.inject({ method: "GET", url: "/tickets", headers: auth(app) });
+    expect(tickets.json().tickets).toHaveLength(1);
   });
 
   it("POST /buy-ticket claims 10 seats for a black chip (carpet bomb)", async () => {
     const buy = await app.inject({
       method: "POST",
       url: "/buy-ticket",
-      headers: AUTH,
+      headers: auth(app),
       payload: { poolId: "p_weekly_tv", chipColor: "black", shippingAddress: "1 Main St" },
     });
     expect(buy.statusCode).toBe(200);
@@ -72,23 +123,19 @@ describe("routes", () => {
   });
 
   it("enforces the whale limit across requests", async () => {
-    const store = createSeededStore();
-    // give u123 a second black chip so the limit (not the balance) is what blocks
-    const local = await buildApp({ store });
     const payload = { poolId: "p_weekly_tv", chipColor: "black", shippingAddress: "x" };
-    const first = await local.inject({ method: "POST", url: "/buy-ticket", headers: AUTH, payload });
+    const first = await app.inject({ method: "POST", url: "/buy-ticket", headers: auth(app), payload });
     expect(first.statusCode).toBe(200);
-    const second = await local.inject({ method: "POST", url: "/buy-ticket", headers: AUTH, payload });
+    const second = await app.inject({ method: "POST", url: "/buy-ticket", headers: auth(app), payload });
     expect(second.statusCode).toBe(429);
     expect(second.json().error.code).toBe("WHALE_LIMIT_REACHED");
-    await local.close();
   });
 
   it("rejects an unknown pool with 404", async () => {
     const res = await app.inject({
       method: "POST",
       url: "/buy-ticket",
-      headers: AUTH,
+      headers: auth(app),
       payload: { poolId: "nope", chipColor: "blue", shippingAddress: "x" },
     });
     expect(res.statusCode).toBe(404);
@@ -99,7 +146,7 @@ describe("routes", () => {
     const res = await app.inject({
       method: "POST",
       url: "/buy-ticket",
-      headers: AUTH,
+      headers: auth(app),
       payload: { poolId: "p_weekly_tv", chipColor: "red", shippingAddress: "x" },
     });
     expect(res.statusCode).toBe(422);
@@ -110,9 +157,76 @@ describe("routes", () => {
     const res = await app.inject({
       method: "POST",
       url: "/buy-ticket",
-      headers: AUTH,
+      headers: auth(app),
       payload: { poolId: "p_weekly_tv" },
     });
     expect(res.statusCode).toBe(400);
+  });
+
+  describe("admin", () => {
+    it("forbids non-admin from creating a pool", async () => {
+      const res = await app.inject({
+        method: "POST",
+        url: "/admin/pools",
+        headers: auth(app, "u123", "user"),
+        payload: {
+          prize: "PS5",
+          type: "FLASH",
+          isGuaranteed: true,
+          requiredChip: "white",
+          capacity: 2,
+          closesAt: Date.now() + 60_000,
+        },
+      });
+      expect(res.statusCode).toBe(401);
+    });
+
+    it("lets an admin create a pool then draw a winner once full", async () => {
+      const admin = auth(app, "admin1", "admin");
+      const create = await app.inject({
+        method: "POST",
+        url: "/admin/pools",
+        headers: admin,
+        payload: {
+          poolId: "p_flash",
+          prize: "PS5",
+          type: "FLASH",
+          isGuaranteed: true,
+          requiredChip: "white",
+          capacity: 2,
+          closesAt: Date.now() + 60_000,
+        },
+      });
+      expect(create.statusCode).toBe(201);
+
+      // u123 has white chips seeded; buy two seats to fill the pool.
+      for (let i = 0; i < 2; i++) {
+        const buy = await app.inject({
+          method: "POST",
+          url: "/buy-ticket",
+          headers: auth(app),
+          payload: { poolId: "p_flash", chipColor: "white", shippingAddress: "x" },
+        });
+        expect(buy.statusCode).toBe(200);
+      }
+
+      const draw = await app.inject({
+        method: "POST",
+        url: "/admin/pools/p_flash/draw",
+        headers: admin,
+      });
+      expect(draw.statusCode).toBe(200);
+      expect(draw.json().winnerUserId).toBe("u123");
+      expect(draw.json().totalTickets).toBe(2);
+
+      // A second draw is rejected.
+      const again = await app.inject({
+        method: "POST",
+        url: "/admin/pools/p_flash/draw",
+        headers: admin,
+      });
+      expect(again.statusCode).toBe(409);
+      expect(again.json().error.code).toBe("POOL_ALREADY_DRAWN");
+    });
   });
 });

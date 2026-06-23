@@ -1,40 +1,64 @@
-import type { FastifyPluginAsync, FastifyRequest } from "fastify";
+import fastifyJwt from "@fastify/jwt";
+import type { FastifyPluginAsync, FastifyReply, FastifyRequest } from "fastify";
 import fp from "fastify-plugin";
 import { UnauthorizedError } from "../domain/errors.js";
+
+/** Claims carried in a A Stack'd access token. */
+export interface AppJwtPayload {
+  sub: string;
+  role?: "user" | "admin";
+}
+
+declare module "@fastify/jwt" {
+  interface FastifyJWT {
+    payload: AppJwtPayload;
+    user: AppJwtPayload;
+  }
+}
 
 declare module "fastify" {
   interface FastifyRequest {
     userId: string;
   }
+  interface FastifyInstance {
+    requireAdmin: (request: FastifyRequest, reply: FastifyReply) => Promise<void>;
+  }
 }
 
-/**
- * Minimal credential extraction for the data bridge. Accepts either
- * `Authorization: Bearer <userId>` or an `x-user-id` header and decorates the
- * request with `userId`.
- *
- * NOTE: This is a placeholder for the cryptographic authenticity check the spec
- * calls for. In production, replace `resolveUserId` with real JWT/signature
- * verification before the request ever reaches the Floor.
- */
-export function resolveUserId(request: FastifyRequest): string {
-  const header = request.headers["authorization"];
-  if (typeof header === "string" && header.toLowerCase().startsWith("bearer ")) {
-    const token = header.slice(7).trim();
-    if (token) return token;
-  }
-  const xUserId = request.headers["x-user-id"];
-  if (typeof xUserId === "string" && xUserId.trim()) {
-    return xUserId.trim();
-  }
-  throw new UnauthorizedError();
+export interface AuthPluginOptions {
+  secret: string;
 }
 
-const authPlugin: FastifyPluginAsync = async (fastify) => {
+const PUBLIC_PREFIXES = ["/health", "/docs", "/auth"];
+
+function isPublic(url: string): boolean {
+  const path = url.split("?")[0] ?? url;
+  if (path === "/") return true;
+  return PUBLIC_PREFIXES.some((prefix) => path === prefix || path.startsWith(prefix + "/"));
+}
+
+const authPlugin: FastifyPluginAsync<AuthPluginOptions> = async (fastify, opts) => {
+  await fastify.register(fastifyJwt, { secret: opts.secret });
+
   fastify.decorateRequest("userId", "");
+
+  fastify.decorate(
+    "requireAdmin",
+    async (request: FastifyRequest, _reply: FastifyReply): Promise<void> => {
+      if (request.user?.role !== "admin") {
+        throw new UnauthorizedError("Admin role required.");
+      }
+    },
+  );
+
   fastify.addHook("onRequest", async (request) => {
-    if (request.url === "/" || request.url.startsWith("/health")) return;
-    request.userId = resolveUserId(request);
+    if (isPublic(request.url)) return;
+    try {
+      await request.jwtVerify();
+    } catch {
+      throw new UnauthorizedError("Missing or invalid access token.");
+    }
+    request.userId = request.user.sub;
   });
 };
 

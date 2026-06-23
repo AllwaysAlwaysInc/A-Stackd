@@ -64,3 +64,31 @@ export class UnauthorizedError extends DomainError {
     super(401, "UNAUTHORIZED", message);
   }
 }
+
+export class PoolAlreadyDrawnError extends DomainError {
+  constructor(poolId: string) {
+    super(409, "POOL_ALREADY_DRAWN", `Pool '${poolId}' has already been drawn.`);
+  }
+}
+
+export class PoolNotDrawableError extends DomainError {
+  constructor(poolId: string) {
+    super(
+      409,
+      "POOL_NOT_DRAWABLE",
+      `Pool '${poolId}' is still open and not yet full; it cannot be drawn.`,
+    );
+  }
+}
+
+export class NoTicketsError extends DomainError {
+  constructor(poolId: string) {
+    super(409, "NO_TICKETS", `Pool '${poolId}' has no tickets to draw from.`);
+  }
+}
+
+export class PoolExistsError extends DomainError {
+  constructor(poolId: string) {
+    super(409, "POOL_EXISTS", `Pool '${poolId}' already exists.`);
+  }
+}

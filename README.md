@@ -6,28 +6,37 @@ Economy ruleset, including the one-black-chip whale limit and dynamic "Melting
 Odds".
 
 Built with **Fastify + TypeScript**. The storage layer is an abstraction
-(`DataStore`) with an in-memory implementation by default; a PostgreSQL
-implementation can satisfy the same contract for production (append-only,
-immutable ticket rows).
+(`DataStore`) with two implementations:
+- **in-memory** (default) — seeded demo data, for local/dev
+- **PostgreSQL** — used automatically when `DATABASE_URL` is set; append-only,
+  immutable ticket rows enforced by a DB trigger
+
+See [`ROADMAP.md`](./ROADMAP.md) for what's done and what's left.
 
 ## Quick start
 
 ```bash
 npm install
-npm run dev          # hot-reload dev server on http://localhost:3000
-# or
-npm run build && npm start
+npm run dev          # in-memory store, http://localhost:3000
 ```
 
-Other scripts: `npm test`, `npm run lint`, `npm run typecheck`.
+With Postgres (Docker):
+```bash
+docker compose up --build   # app + postgres, migrations run on boot
+```
+
+Scripts: `npm test`, `npm run lint`, `npm run typecheck`, `npm run build`,
+`npm start`, `npm run migrate` (run schema against `DATABASE_URL`).
+
+Interactive API docs (Swagger UI): **http://localhost:3000/docs**
 
 ## The chip economy
 
-| Chip  | Value | Mood          | Seats per chip |
-|-------|-------|---------------|----------------|
-| red   | $1    | Rage          | 1              |
-| white | $5    | Safe          | 1              |
-| blue  | $10   | Calm          | 1              |
+| Chip  | Value | Mood          | Seats per chip   |
+|-------|-------|---------------|------------------|
+| red   | $1    | Rage          | 1                |
+| white | $5    | Safe          | 1                |
+| blue  | $10   | Calm          | 1                |
 | black | $100  | Consumes All  | 10 (carpet bomb) |
 
 Ruleset enforced on every `/buy-ticket` (see `src/domain/economy.ts`):
@@ -42,25 +51,48 @@ Ruleset enforced on every `/buy-ticket` (see `src/domain/economy.ts`):
 **Melting Odds:** `multiplier = capacity / filled`, e.g. a `185/500` pool yields
 `2.7x`. Surfaced on `/active-pools` as the Sales Agent surge alert.
 
+## Auth
+
+Endpoints (other than the public `/`, `/health`, `/docs`, `/auth/*`) require a
+**JWT** bearer token: `Authorization: Bearer <jwt>`. Tokens carry `{ sub, role }`
+where `role` is `user` or `admin`.
+
+For local development, mint a token without a login flow:
+```bash
+curl -X POST localhost:3000/auth/dev-token -H 'content-type: application/json' \
+  -d '{"userId":"u123","role":"user"}'
+# -> { "token": "..." }
+```
+`/auth/dev-token` is **disabled when `NODE_ENV=production`** — wire real tokens to
+your identity provider there. `JWT_SECRET` is required in production.
+
 ## API
 
-Auth: send the user id as `Authorization: Bearer <userId>` or `x-user-id:
-<userId>`. This is a placeholder for the cryptographic signature check the spec
-calls for — replace `resolveUserId` in `src/plugins/auth.ts` before production.
+| Method | Path | Auth | Description |
+|--------|------|------|-------------|
+| GET  | `/wallet` | user | Read the chip stack |
+| POST | `/buy-ticket` | user | Buy a ticket (the data-bridge transition) |
+| GET  | `/tickets` | user | List my immutable tickets |
+| GET  | `/active-pools` | user | Active pools with melting odds |
+| GET  | `/pools/:poolId` | user | A single pool |
+| POST | `/admin/pools` | admin | Create a pool |
+| POST | `/admin/pools/:poolId/draw` | admin | Draw a winner (closed/full pools) |
+| POST | `/auth/dev-token` | public (non-prod) | Mint a dev token |
+| GET  | `/`, `/health`, `/docs` | public | Landing, health, Swagger UI |
 
-### `GET /wallet` — read the stack
+### `GET /wallet`
 ```json
 { "userId": "u123", "stacks": { "red": 25, "white": 10, "blue": 5, "black": 1 } }
 ```
 
-### `POST /buy-ticket` — the data bridge transition
+### `POST /buy-ticket`
 Body: `{ "poolId": "p_weekly_tv", "chipColor": "blue", "shippingAddress": "..." }`
 ```json
 { "success": true, "ticketId": "tkt_secure_...", "seats": 1,
   "msg": "Ticket secured on the floor. [1] seats claimed." }
 ```
 
-### `GET /active-pools` — including melting odds
+### `GET /active-pools`
 ```json
 { "pools": [ {
   "poolId": "p_weekly_tv", "prize": "55-inch 4K Smart TV", "type": "WEEKLY_GRAND",
@@ -71,32 +103,45 @@ Body: `{ "poolId": "p_weekly_tv", "chipColor": "blue", "shippingAddress": "..." 
 ```
 
 Errors use a consistent shape: `{ "error": { "code": "WHALE_LIMIT_REACHED", "message": "..." } }`.
-Codes: `POOL_NOT_FOUND` (404), `POOL_CLOSED`/`POOL_FULL` (409),
+Codes: `POOL_NOT_FOUND` (404), `POOL_CLOSED`/`POOL_FULL`/`POOL_ALREADY_DRAWN`/`POOL_NOT_DRAWABLE`/`NO_TICKETS`/`POOL_EXISTS` (409),
 `INVALID_CHIP_FOR_POOL` (422), `INSUFFICIENT_CHIPS` (402),
-`WHALE_LIMIT_REACHED` (429), `UNAUTHORIZED` (401), `VALIDATION_ERROR` (400).
+`WHALE_LIMIT_REACHED`/`RATE_LIMITED` (429), `UNAUTHORIZED` (401), `VALIDATION_ERROR` (400).
 
-Plus `GET /` (a minimal "buzz" landing page) and `GET /health`.
+## Configuration
+
+See [`.env.example`](./.env.example). Key vars: `PORT`, `JWT_SECRET` (required in
+prod), `DATABASE_URL` (enables Postgres), `CORS_ORIGIN`, `RATE_LIMIT_MAX`,
+`RATE_LIMIT_WINDOW`.
 
 ## Project layout
 
 ```
 src/
-  app.ts            Fastify app factory (error handler, route wiring)
+  app.ts            Fastify app factory (plugins, error handler, route wiring)
   index.ts          Server entrypoint
-  config.ts         Env-based config
+  config.ts         Typed, fail-fast env config
   domain/           Pure business logic (chips, pools, economy, errors, tickets)
-  store/            DataStore interface, in-memory impl, seed data
-  routes/           wallet, tickets, pools
-  plugins/auth.ts   Credential extraction
+  store/            DataStore interface, memory + postgres impls, factory, seed, migrate
+  routes/           wallet, tickets, pools, admin, auth
+  plugins/auth.ts   JWT auth (verify + requireAdmin)
+  schemas.ts        TypeBox request/response schemas
   landing.ts        Buzz landing page HTML
-test/               Vitest unit + route tests
+test/               Vitest unit + route + postgres tests
 ```
+
+## Deployment
+
+- **Docker:** `docker compose up --build` runs app + Postgres locally.
+- **Heroku:** the `Procfile` runs `migrate` on release and `node dist/index.js`
+  for web. Set `JWT_SECRET` and attach a Postgres add-on (`DATABASE_URL`).
+- **CI:** GitHub Actions (`.github/workflows/ci.yml`) runs lint, typecheck,
+  tests (with a Postgres service so the integration tests execute), and build.
 
 ## Production notes
 
-- **Real database:** implement `DataStore` against PostgreSQL. Keep the ticket
-  table append-only (no UPDATE/DELETE) so the Floor stays immutable; do the
-  debit + ticket insert + fill-count update in a single transaction.
-- **Auth:** swap the placeholder for verified JWT/signature checks.
+- **Immutability:** the Postgres `tickets` table rejects UPDATE/DELETE via a
+  trigger, and the whale limit is also enforced by a partial unique index.
 - **Air-gap:** run this service on a network-isolated host, reachable only via
   the app's API gateway, per the launch plan.
+- **Before real money:** add a payments processor, KYC/age verification, and
+  sweepstakes/gambling legal review — see `ROADMAP.md`.

@@ -3,9 +3,7 @@ import { loadConfig } from "./config.js";
 
 async function main(): Promise<void> {
   const config = loadConfig();
-  const app = await buildApp({
-    logger: { level: config.logLevel },
-  });
+  const app = await buildApp({ config, logger: { level: config.logLevel } });
 
   try {
     await app.listen({ port: config.port, host: config.host });
