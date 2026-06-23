@@ -75,7 +75,7 @@ export async function buildApp(options: BuildAppOptions = {}): Promise<FastifyIn
   });
   app.get("/health", async () => ({ status: "ok", service: "astackd-backend" }));
 
-  await app.register(authRoutes(config.isProduction));
+  await app.register(authRoutes(store, config.isProduction, config.welcomeChips));
   await app.register(walletRoutes(store));
   await app.register(ticketRoutes(store));
   await app.register(poolRoutes(store));

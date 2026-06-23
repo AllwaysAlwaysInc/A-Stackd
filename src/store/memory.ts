@@ -1,10 +1,11 @@
 import { randomUUID } from "node:crypto";
 import { emptyWallet, type ChipColor, type ChipWallet } from "../domain/chips.js";
 import { assertDrawable, assertPurchaseAllowed, pickWinnerIndex } from "../domain/economy.js";
-import { NoTicketsError, PoolExistsError, PoolNotFoundError } from "../domain/errors.js";
+import { EmailInUseError, NoTicketsError, PoolExistsError, PoolNotFoundError } from "../domain/errors.js";
 import type { CreatePoolInput, Pool } from "../domain/pools.js";
 import type { Ticket } from "../domain/tickets.js";
-import type { DataStore, DrawResult, PurchaseInput, PurchaseResult } from "./types.js";
+import { normalizeEmail, type User } from "../domain/users.js";
+import type { CreateUserInput, DataStore, DrawResult, PurchaseInput, PurchaseResult } from "./types.js";
 
 /**
  * In-memory implementation of the Floor. Node runs each mutating method to
@@ -15,6 +16,7 @@ export class MemoryStore implements DataStore {
   private readonly wallets = new Map<string, ChipWallet>();
   private readonly pools = new Map<string, Pool>();
   private readonly tickets: Ticket[] = [];
+  private readonly usersByEmail = new Map<string, User>();
 
   constructor(seed?: { wallets?: Record<string, ChipWallet>; pools?: Pool[] }) {
     for (const [userId, wallet] of Object.entries(seed?.wallets ?? {})) {
@@ -23,6 +25,24 @@ export class MemoryStore implements DataStore {
     for (const pool of seed?.pools ?? []) {
       this.pools.set(pool.poolId, { ...pool });
     }
+  }
+
+  async createUser(input: CreateUserInput): Promise<User> {
+    const email = normalizeEmail(input.email);
+    if (this.usersByEmail.has(email)) throw new EmailInUseError(email);
+    const user: User = {
+      userId: `u_${randomUUID().slice(0, 8)}`,
+      email,
+      passwordHash: input.passwordHash,
+      role: input.role ?? "user",
+    };
+    this.usersByEmail.set(email, user);
+    return { ...user };
+  }
+
+  async getUserByEmail(email: string): Promise<User | null> {
+    const user = this.usersByEmail.get(normalizeEmail(email));
+    return user ? { ...user } : null;
   }
 
   async getWallet(userId: string): Promise<ChipWallet | null> {

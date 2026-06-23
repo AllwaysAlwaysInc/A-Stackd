@@ -1,3 +1,5 @@
+import type { ChipWallet } from "./domain/chips.js";
+
 export interface AppConfig {
   port: number;
   host: string;
@@ -10,6 +12,11 @@ export interface AppConfig {
   corsOrigin: string;
   rateLimitMax: number;
   rateLimitWindow: string;
+  /**
+   * Demo "free play" chips granted on registration so the app is usable before
+   * a real payment processor is wired in. Set WELCOME_CHIPS=0,0,0,0 to disable.
+   */
+  welcomeChips: ChipWallet;
 }
 
 const DEV_JWT_SECRET = "dev-only-insecure-secret-change-me";
@@ -40,5 +47,17 @@ export function loadConfig(env: NodeJS.ProcessEnv = process.env): AppConfig {
     corsOrigin: env.CORS_ORIGIN ?? "*",
     rateLimitMax: Number(env.RATE_LIMIT_MAX ?? 100),
     rateLimitWindow: env.RATE_LIMIT_WINDOW ?? "1 minute",
+    welcomeChips: parseWelcomeChips(env.WELCOME_CHIPS),
   };
+}
+
+/** Parse "red,white,blue,black" counts; defaults to a small starter stack. */
+function parseWelcomeChips(raw: string | undefined): ChipWallet {
+  const defaults: ChipWallet = { red: 10, white: 5, blue: 3, black: 1 };
+  if (!raw) return defaults;
+  const parts = raw.split(",").map((n) => Number(n.trim()));
+  if (parts.length !== 4 || parts.some((n) => !Number.isInteger(n) || n < 0)) {
+    throw new Error(`Invalid WELCOME_CHIPS: ${raw} (expected "red,white,blue,black")`);
+  }
+  return { red: parts[0]!, white: parts[1]!, blue: parts[2]!, black: parts[3]! };
 }

@@ -76,6 +76,67 @@ describe("routes", () => {
     expect(wallet.json().userId).toBe("u999");
   });
 
+  it("POST /auth/register creates an account, grants welcome chips, and logs in", async () => {
+    const reg = await app.inject({
+      method: "POST",
+      url: "/auth/register",
+      payload: { email: "Player@Example.com", password: "hunter2hunter" },
+    });
+    expect(reg.statusCode).toBe(201);
+    const { token, userId, role } = reg.json();
+    expect(role).toBe("user");
+
+    const wallet = await app.inject({
+      method: "GET",
+      url: "/wallet",
+      headers: { authorization: `Bearer ${token}` },
+    });
+    expect(wallet.json()).toEqual({
+      userId,
+      stacks: { red: 10, white: 5, blue: 3, black: 1 },
+    });
+
+    const dup = await app.inject({
+      method: "POST",
+      url: "/auth/register",
+      payload: { email: "player@example.com", password: "anotherpass1" },
+    });
+    expect(dup.statusCode).toBe(409);
+    expect(dup.json().error.code).toBe("EMAIL_IN_USE");
+
+    const login = await app.inject({
+      method: "POST",
+      url: "/auth/login",
+      payload: { email: "player@example.com", password: "hunter2hunter" },
+    });
+    expect(login.statusCode).toBe(200);
+    expect(login.json().userId).toBe(userId);
+
+    const bad = await app.inject({
+      method: "POST",
+      url: "/auth/login",
+      payload: { email: "player@example.com", password: "wrongpassword" },
+    });
+    expect(bad.statusCode).toBe(401);
+    expect(bad.json().error.code).toBe("INVALID_CREDENTIALS");
+  });
+
+  it("POST /auth/register rejects a short password and bad email", async () => {
+    const shortPw = await app.inject({
+      method: "POST",
+      url: "/auth/register",
+      payload: { email: "a@b.co", password: "short" },
+    });
+    expect(shortPw.statusCode).toBe(400);
+
+    const badEmail = await app.inject({
+      method: "POST",
+      url: "/auth/register",
+      payload: { email: "not-an-email", password: "longenough1" },
+    });
+    expect(badEmail.statusCode).toBe(400);
+  });
+
   it("GET /active-pools surfaces melting odds and the surge alert", async () => {
     const res = await app.inject({ method: "GET", url: "/active-pools", headers: auth(app) });
     expect(res.statusCode).toBe(200);

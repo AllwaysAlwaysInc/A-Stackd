@@ -92,3 +92,15 @@ export class PoolExistsError extends DomainError {
     super(409, "POOL_EXISTS", `Pool '${poolId}' already exists.`);
   }
 }
+
+export class EmailInUseError extends DomainError {
+  constructor(email: string) {
+    super(409, "EMAIL_IN_USE", `An account already exists for '${email}'.`);
+  }
+}
+
+export class InvalidCredentialsError extends DomainError {
+  constructor() {
+    super(401, "INVALID_CREDENTIALS", "Incorrect email or password.");
+  }
+}

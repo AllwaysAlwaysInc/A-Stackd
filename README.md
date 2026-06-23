@@ -57,14 +57,20 @@ Endpoints (other than the public `/`, `/health`, `/docs`, `/auth/*`) require a
 **JWT** bearer token: `Authorization: Bearer <jwt>`. Tokens carry `{ sub, role }`
 where `role` is `user` or `admin`.
 
-For local development, mint a token without a login flow:
+Register or log in with email + password to receive a token. New accounts are
+granted a demo "free play" chip stack (configurable via `WELCOME_CHIPS`, set it
+to `0,0,0,0` once a payment processor is wired in).
 ```bash
-curl -X POST localhost:3000/auth/dev-token -H 'content-type: application/json' \
-  -d '{"userId":"u123","role":"user"}'
-# -> { "token": "..." }
+curl -X POST localhost:3000/auth/register -H 'content-type: application/json' \
+  -d '{"email":"player@example.com","password":"hunter2hunter"}'
+# -> { "token": "...", "userId": "u_...", "role": "user" }
+
+curl -X POST localhost:3000/auth/login -H 'content-type: application/json' \
+  -d '{"email":"player@example.com","password":"hunter2hunter"}'
 ```
-`/auth/dev-token` is **disabled when `NODE_ENV=production`** — wire real tokens to
-your identity provider there. `JWT_SECRET` is required in production.
+Passwords are hashed with bcrypt. For local testing only, `/auth/dev-token` mints
+a token for an arbitrary `userId`; it is **disabled when `NODE_ENV=production`**.
+`JWT_SECRET` is required in production.
 
 ## API
 
@@ -77,6 +83,8 @@ your identity provider there. `JWT_SECRET` is required in production.
 | GET  | `/pools/:poolId` | user | A single pool |
 | POST | `/admin/pools` | admin | Create a pool |
 | POST | `/admin/pools/:poolId/draw` | admin | Draw a winner (closed/full pools) |
+| POST | `/auth/register` | public | Create an account, get a token |
+| POST | `/auth/login` | public | Log in, get a token |
 | POST | `/auth/dev-token` | public (non-prod) | Mint a dev token |
 | GET  | `/`, `/health`, `/docs` | public | Landing, health, Swagger UI |
 

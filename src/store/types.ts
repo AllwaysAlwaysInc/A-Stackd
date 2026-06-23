@@ -1,6 +1,13 @@
 import type { ChipColor, ChipWallet } from "../domain/chips.js";
 import type { CreatePoolInput, Pool } from "../domain/pools.js";
 import type { Ticket } from "../domain/tickets.js";
+import type { User, UserRole } from "../domain/users.js";
+
+export interface CreateUserInput {
+  email: string;
+  passwordHash: string;
+  role?: UserRole;
+}
 
 export interface PurchaseInput {
   userId: string;
@@ -32,6 +39,9 @@ export interface DrawResult {
  * same contract for production (immutable, append-only ticket rows).
  */
 export interface DataStore {
+  /** Create a user account. Throws EmailInUseError if the email exists. */
+  createUser(input: CreateUserInput): Promise<User>;
+  getUserByEmail(email: string): Promise<User | null>;
   getWallet(userId: string): Promise<ChipWallet | null>;
   getOrCreateWallet(userId: string): Promise<ChipWallet>;
   creditWallet(userId: string, color: ChipColor, amount: number): Promise<ChipWallet>;

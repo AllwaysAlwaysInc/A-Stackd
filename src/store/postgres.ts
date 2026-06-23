@@ -2,11 +2,12 @@ import { randomUUID } from "node:crypto";
 import pg from "pg";
 import { type ChipColor, type ChipWallet } from "../domain/chips.js";
 import { assertDrawable, assertPurchaseAllowed, pickWinnerIndex } from "../domain/economy.js";
-import { NoTicketsError, PoolExistsError, PoolNotFoundError } from "../domain/errors.js";
+import { EmailInUseError, NoTicketsError, PoolExistsError, PoolNotFoundError } from "../domain/errors.js";
 import type { CreatePoolInput, Pool } from "../domain/pools.js";
 import type { Ticket } from "../domain/tickets.js";
+import { normalizeEmail, type User, type UserRole } from "../domain/users.js";
 import { seedPools } from "./seed.js";
-import type { DataStore, DrawResult, PurchaseInput, PurchaseResult } from "./types.js";
+import type { CreateUserInput, DataStore, DrawResult, PurchaseInput, PurchaseResult } from "./types.js";
 
 const { Pool: PgPool } = pg;
 type PoolClient = pg.PoolClient;
@@ -18,6 +19,14 @@ type PoolClient = pg.PoolClient;
  * level, independent of application checks.
  */
 export const SCHEMA_SQL = `
+CREATE TABLE IF NOT EXISTS users (
+  user_id       TEXT PRIMARY KEY,
+  email         TEXT NOT NULL UNIQUE,
+  password_hash TEXT NOT NULL,
+  role          TEXT NOT NULL DEFAULT 'user',
+  created_at    BIGINT NOT NULL
+);
+
 CREATE TABLE IF NOT EXISTS wallets (
   user_id TEXT PRIMARY KEY,
   red   INTEGER NOT NULL DEFAULT 0 CHECK (red >= 0),
@@ -100,6 +109,22 @@ function mapPool(row: PoolRow): Pool {
   return pool;
 }
 
+interface UserRow {
+  user_id: string;
+  email: string;
+  password_hash: string;
+  role: string;
+}
+
+function mapUser(row: UserRow): User {
+  return {
+    userId: row.user_id,
+    email: row.email,
+    passwordHash: row.password_hash,
+    role: row.role as UserRole,
+  };
+}
+
 interface WalletRow {
   red: string | number;
   white: string | number;
@@ -126,6 +151,31 @@ export class PostgresStore implements DataStore {
 
   async migrate(): Promise<void> {
     await this.pool.query(SCHEMA_SQL);
+  }
+
+  async createUser(input: CreateUserInput): Promise<User> {
+    const email = normalizeEmail(input.email);
+    const userId = `u_${randomUUID().slice(0, 8)}`;
+    try {
+      const res = await this.pool.query<UserRow>(
+        `INSERT INTO users (user_id, email, password_hash, role, created_at)
+         VALUES ($1, $2, $3, $4, $5) RETURNING *`,
+        [userId, email, input.passwordHash, input.role ?? "user", Date.now()],
+      );
+      return mapUser(res.rows[0]!);
+    } catch (error) {
+      if (isUniqueViolation(error)) throw new EmailInUseError(email);
+      throw error;
+    }
+  }
+
+  async getUserByEmail(email: string): Promise<User | null> {
+    const res = await this.pool.query<UserRow>(
+      "SELECT * FROM users WHERE email = $1",
+      [normalizeEmail(email)],
+    );
+    const row = res.rows[0];
+    return row ? mapUser(row) : null;
   }
 
   async getWallet(userId: string): Promise<ChipWallet | null> {

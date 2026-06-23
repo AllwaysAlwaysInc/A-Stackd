@@ -27,7 +27,7 @@ describePg("PostgresStore", () => {
     // tickets is append-only (trigger blocks DELETE), so drop+recreate.
     // @ts-expect-error access the underlying pool for test teardown only
     await reset.pool.query(
-      "DROP TABLE IF EXISTS tickets CASCADE; DROP TABLE IF EXISTS pools CASCADE; DROP TABLE IF EXISTS wallets CASCADE;",
+      "DROP TABLE IF EXISTS tickets CASCADE; DROP TABLE IF EXISTS pools CASCADE; DROP TABLE IF EXISTS wallets CASCADE; DROP TABLE IF EXISTS users CASCADE;",
     );
     await reset.migrate();
     await reset.close();
@@ -45,6 +45,22 @@ describePg("PostgresStore", () => {
     const wallet = seedWallets().u123!;
     await store.creditWallet("u123", "blue", wallet.blue);
     await store.creditWallet("u123", "black", wallet.black);
+  });
+
+  it("persists users and enforces unique emails", async () => {
+    const user = await store.createUser({
+      email: "Persist@Example.com",
+      passwordHash: "hash",
+    });
+    expect(user.userId).toMatch(/^u_/);
+    expect(user.email).toBe("persist@example.com");
+
+    const found = await store.getUserByEmail("persist@example.com");
+    expect(found?.userId).toBe(user.userId);
+
+    await expect(
+      store.createUser({ email: "persist@example.com", passwordHash: "other" }),
+    ).rejects.toMatchObject({ code: "EMAIL_IN_USE" });
   });
 
   it("persists a purchase: debits wallet, appends rows, advances fill", async () => {
