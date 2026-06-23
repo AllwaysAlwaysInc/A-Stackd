@@ -7,7 +7,9 @@ services:
     runtime: node
     plan: free
     autoDeploy: true
-    buildCommand: npm ci && npm run build
+    # NODE_ENV=production makes npm omit devDependencies, but the build needs
+    # TypeScript (a devDependency), so force-include dev deps for the build.
+    buildCommand: npm ci --include=dev && npm run build
     # Run migrations (idempotent) then boot the server.
     startCommand: node dist/store/migrate.js && node dist/index.js
     healthCheckPath: /health
