@@ -1,3 +1,4 @@
+import type { ShippingAddress } from "../domain/address.js";
 import type { ChipColor, ChipWallet } from "../domain/chips.js";
 import type { CreatePoolInput, Pool } from "../domain/pools.js";
 import type { Ticket } from "../domain/tickets.js";
@@ -13,7 +14,7 @@ export interface PurchaseInput {
   userId: string;
   poolId: string;
   chipColor: ChipColor;
-  shippingAddress: string;
+  shippingAddress: ShippingAddress;
   now?: number;
 }
 

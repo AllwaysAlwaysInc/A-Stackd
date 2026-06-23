@@ -17,10 +17,23 @@ export const WalletResponseSchema = Type.Object({
   }),
 });
 
+export const ShippingAddressSchema = Type.Object(
+  {
+    name: Type.String({ minLength: 2, maxLength: 100 }),
+    line1: Type.String({ minLength: 3, maxLength: 100 }),
+    line2: Type.Optional(Type.String({ maxLength: 100 })),
+    city: Type.String({ minLength: 2, maxLength: 60 }),
+    state: Type.String({ minLength: 2, maxLength: 2 }),
+    postalCode: Type.String({ minLength: 5, maxLength: 10 }),
+    country: Type.Optional(Type.String({ maxLength: 3 })),
+  },
+  { additionalProperties: false },
+);
+
 export const BuyTicketBodySchema = Type.Object({
   poolId: Type.String({ minLength: 1 }),
   chipColor: ChipColorSchema,
-  shippingAddress: Type.String({ minLength: 1 }),
+  shippingAddress: ShippingAddressSchema,
 });
 
 export const BuyTicketResponseSchema = Type.Object({
@@ -57,6 +70,7 @@ export const TicketSchema = Type.Object({
   chipColor: ChipColorSchema,
   seatNumber: Type.Integer(),
   createdAt: Type.Integer(),
+  shippingAddress: ShippingAddressSchema,
 });
 
 export const TicketsResponseSchema = Type.Object({

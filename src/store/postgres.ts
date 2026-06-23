@@ -1,5 +1,6 @@
 import { randomUUID } from "node:crypto";
 import pg from "pg";
+import type { ShippingAddress } from "../domain/address.js";
 import { type ChipColor, type ChipWallet } from "../domain/chips.js";
 import { assertDrawable, assertPurchaseAllowed, pickWinnerIndex } from "../domain/economy.js";
 import { EmailInUseError, NoTicketsError, PoolExistsError, PoolNotFoundError } from "../domain/errors.js";
@@ -50,13 +51,14 @@ CREATE TABLE IF NOT EXISTS pools (
 );
 
 CREATE TABLE IF NOT EXISTS tickets (
-  id          TEXT PRIMARY KEY,
-  batch_id    TEXT NOT NULL,
-  pool_id     TEXT NOT NULL REFERENCES pools(pool_id),
-  user_id     TEXT NOT NULL,
-  chip_color  TEXT NOT NULL,
-  seat_number INTEGER NOT NULL,
-  created_at  BIGINT NOT NULL
+  id               TEXT PRIMARY KEY,
+  batch_id         TEXT NOT NULL,
+  pool_id          TEXT NOT NULL REFERENCES pools(pool_id),
+  user_id          TEXT NOT NULL,
+  chip_color       TEXT NOT NULL,
+  seat_number      INTEGER NOT NULL,
+  created_at       BIGINT NOT NULL,
+  shipping_address JSONB NOT NULL
 );
 
 CREATE INDEX IF NOT EXISTS tickets_pool_idx ON tickets(pool_id);
@@ -321,10 +323,11 @@ export class PostgresStore implements DataStore {
           chipColor: input.chipColor,
           seatNumber,
           createdAt: now,
+          shippingAddress: input.shippingAddress,
         };
         await client.query(
-          `INSERT INTO tickets (id, batch_id, pool_id, user_id, chip_color, seat_number, created_at)
-           VALUES ($1, $2, $3, $4, $5, $6, $7)`,
+          `INSERT INTO tickets (id, batch_id, pool_id, user_id, chip_color, seat_number, created_at, shipping_address)
+           VALUES ($1, $2, $3, $4, $5, $6, $7, $8)`,
           [
             ticket.id,
             ticket.batchId,
@@ -333,6 +336,7 @@ export class PostgresStore implements DataStore {
             ticket.chipColor,
             ticket.seatNumber,
             ticket.createdAt,
+            JSON.stringify(ticket.shippingAddress),
           ],
         );
         batch.push(ticket);
@@ -406,6 +410,7 @@ interface TicketRow {
   chip_color: string;
   seat_number: string | number;
   created_at: string | number;
+  shipping_address: ShippingAddress;
 }
 
 function mapTicket(row: TicketRow): Ticket {
@@ -417,6 +422,7 @@ function mapTicket(row: TicketRow): Ticket {
     chipColor: row.chip_color as ChipColor,
     seatNumber: Number(row.seat_number),
     createdAt: Number(row.created_at),
+    shippingAddress: row.shipping_address,
   };
 }
 

@@ -4,6 +4,15 @@ import { seedPools, seedWallets } from "../src/store/seed.js";
 
 const DATABASE_URL = process.env.DATABASE_URL;
 
+const ADDRESS = {
+  name: "Austin Hanshew",
+  line1: "123 Jackpot Ave",
+  city: "Las Vegas",
+  state: "NV",
+  postalCode: "89101",
+  country: "US",
+};
+
 // These tests only run when a Postgres instance is provided via DATABASE_URL.
 const describePg = DATABASE_URL ? describe : describe.skip;
 
@@ -69,7 +78,7 @@ describePg("PostgresStore", () => {
       userId: "u123",
       poolId: "p_weekly_tv",
       chipColor: "blue",
-      shippingAddress: "1 Main St",
+      shippingAddress: ADDRESS,
       now: NOW,
     });
     expect(result.seats).toBe(1);
@@ -82,6 +91,7 @@ describePg("PostgresStore", () => {
 
     const tickets = await store.ticketsForUser("u123");
     expect(tickets).toHaveLength(1);
+    expect(tickets[0]!.shippingAddress).toMatchObject(ADDRESS);
   });
 
   it("a black chip drops 10 immutable rows", async () => {
@@ -89,7 +99,7 @@ describePg("PostgresStore", () => {
       userId: "u123",
       poolId: "p_weekly_tv",
       chipColor: "black",
-      shippingAddress: "1 Main St",
+      shippingAddress: ADDRESS,
       now: NOW,
     });
     expect(result.seats).toBe(10);
@@ -103,7 +113,7 @@ describePg("PostgresStore", () => {
       userId: "u123",
       poolId: "p_weekly_tv",
       chipColor: "black",
-      shippingAddress: "x",
+      shippingAddress: ADDRESS,
       now: NOW,
     });
     await expect(
@@ -111,7 +121,7 @@ describePg("PostgresStore", () => {
         userId: "u123",
         poolId: "p_weekly_tv",
         chipColor: "black",
-        shippingAddress: "x",
+        shippingAddress: ADDRESS,
         now: NOW,
       }),
     ).rejects.toMatchObject({ code: "WHALE_LIMIT_REACHED" });
@@ -122,7 +132,7 @@ describePg("PostgresStore", () => {
       userId: "u123",
       poolId: "p_weekly_tv",
       chipColor: "blue",
-      shippingAddress: "x",
+      shippingAddress: ADDRESS,
       now: NOW,
     });
     // @ts-expect-error access pool for the immutability assertion only

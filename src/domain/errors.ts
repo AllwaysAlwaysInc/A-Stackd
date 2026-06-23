@@ -104,3 +104,13 @@ export class InvalidCredentialsError extends DomainError {
     super(401, "INVALID_CREDENTIALS", "Incorrect email or password.");
   }
 }
+
+export class InvalidAddressError extends DomainError {
+  constructor(problems: readonly string[]) {
+    super(
+      422,
+      "INVALID_ADDRESS",
+      `A complete shipping address is required to claim a prize: ${problems.join("; ")}.`,
+    );
+  }
+}

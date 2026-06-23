@@ -1,3 +1,4 @@
+import type { ShippingAddress } from "./address.js";
 import type { ChipColor } from "./chips.js";
 
 /**
@@ -15,4 +16,6 @@ export interface Ticket {
   /** 1-based seat index within this purchase batch. */
   readonly seatNumber: number;
   readonly createdAt: number;
+  /** Validated destination for the prize, captured when the seat was claimed. */
+  readonly shippingAddress: ShippingAddress;
 }

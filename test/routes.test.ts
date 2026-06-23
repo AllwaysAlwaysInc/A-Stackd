@@ -14,6 +14,14 @@ function auth(app: FastifyInstance, sub = "u123", role: "user" | "admin" = "user
   return { authorization: `Bearer ${app.jwt.sign({ sub, role })}` };
 }
 
+const ADDRESS = {
+  name: "Austin Hanshew",
+  line1: "123 Jackpot Ave",
+  city: "Las Vegas",
+  state: "NV",
+  postalCode: "89101",
+};
+
 describe("routes", () => {
   let app: FastifyInstance;
 
@@ -160,7 +168,7 @@ describe("routes", () => {
       method: "POST",
       url: "/buy-ticket",
       headers: auth(app),
-      payload: { poolId: "p_weekly_tv", chipColor: "blue", shippingAddress: "1 Main St" },
+      payload: { poolId: "p_weekly_tv", chipColor: "blue", shippingAddress: ADDRESS },
     });
     expect(buy.statusCode).toBe(200);
     expect(buy.json()).toMatchObject({ success: true, seats: 1 });
@@ -177,14 +185,14 @@ describe("routes", () => {
       method: "POST",
       url: "/buy-ticket",
       headers: auth(app),
-      payload: { poolId: "p_weekly_tv", chipColor: "black", shippingAddress: "1 Main St" },
+      payload: { poolId: "p_weekly_tv", chipColor: "black", shippingAddress: ADDRESS },
     });
     expect(buy.statusCode).toBe(200);
     expect(buy.json()).toMatchObject({ success: true, seats: 10 });
   });
 
   it("enforces the whale limit across requests", async () => {
-    const payload = { poolId: "p_weekly_tv", chipColor: "black", shippingAddress: "x" };
+    const payload = { poolId: "p_weekly_tv", chipColor: "black", shippingAddress: ADDRESS };
     const first = await app.inject({ method: "POST", url: "/buy-ticket", headers: auth(app), payload });
     expect(first.statusCode).toBe(200);
     const second = await app.inject({ method: "POST", url: "/buy-ticket", headers: auth(app), payload });
@@ -197,7 +205,7 @@ describe("routes", () => {
       method: "POST",
       url: "/buy-ticket",
       headers: auth(app),
-      payload: { poolId: "nope", chipColor: "blue", shippingAddress: "x" },
+      payload: { poolId: "nope", chipColor: "blue", shippingAddress: ADDRESS },
     });
     expect(res.statusCode).toBe(404);
     expect(res.json().error.code).toBe("POOL_NOT_FOUND");
@@ -208,7 +216,7 @@ describe("routes", () => {
       method: "POST",
       url: "/buy-ticket",
       headers: auth(app),
-      payload: { poolId: "p_weekly_tv", chipColor: "red", shippingAddress: "x" },
+      payload: { poolId: "p_weekly_tv", chipColor: "red", shippingAddress: ADDRESS },
     });
     expect(res.statusCode).toBe(422);
     expect(res.json().error.code).toBe("INVALID_CHIP_FOR_POOL");
@@ -222,6 +230,84 @@ describe("routes", () => {
       payload: { poolId: "p_weekly_tv" },
     });
     expect(res.statusCode).toBe(400);
+  });
+
+  it("rejects a buy with no shipping address (schema-level 400)", async () => {
+    const res = await app.inject({
+      method: "POST",
+      url: "/buy-ticket",
+      headers: auth(app),
+      payload: { poolId: "p_weekly_tv", chipColor: "blue" },
+    });
+    expect(res.statusCode).toBe(400);
+  });
+
+  it("rejects a buy with an invalid ZIP and does not debit the wallet", async () => {
+    const res = await app.inject({
+      method: "POST",
+      url: "/buy-ticket",
+      headers: auth(app),
+      payload: {
+        poolId: "p_weekly_tv",
+        chipColor: "blue",
+        shippingAddress: { ...ADDRESS, postalCode: "abcde" },
+      },
+    });
+    expect(res.statusCode).toBe(422);
+    expect(res.json().error.code).toBe("INVALID_ADDRESS");
+
+    const wallet = await app.inject({ method: "GET", url: "/wallet", headers: auth(app) });
+    expect(wallet.json().stacks.blue).toBe(5);
+  });
+
+  it("rejects a buy with an unknown state code", async () => {
+    const res = await app.inject({
+      method: "POST",
+      url: "/buy-ticket",
+      headers: auth(app),
+      payload: {
+        poolId: "p_weekly_tv",
+        chipColor: "blue",
+        shippingAddress: { ...ADDRESS, state: "ZZ" },
+      },
+    });
+    expect(res.statusCode).toBe(422);
+    expect(res.json().error.code).toBe("INVALID_ADDRESS");
+  });
+
+  it("rejects a street with no number", async () => {
+    const res = await app.inject({
+      method: "POST",
+      url: "/buy-ticket",
+      headers: auth(app),
+      payload: {
+        poolId: "p_weekly_tv",
+        chipColor: "blue",
+        shippingAddress: { ...ADDRESS, line1: "Jackpot Avenue" },
+      },
+    });
+    expect(res.statusCode).toBe(422);
+    expect(res.json().error.code).toBe("INVALID_ADDRESS");
+  });
+
+  it("persists the shipping address on the ticket so the prize can ship", async () => {
+    const buy = await app.inject({
+      method: "POST",
+      url: "/buy-ticket",
+      headers: auth(app),
+      payload: { poolId: "p_weekly_tv", chipColor: "blue", shippingAddress: ADDRESS },
+    });
+    expect(buy.statusCode).toBe(200);
+
+    const tickets = await app.inject({ method: "GET", url: "/tickets", headers: auth(app) });
+    expect(tickets.json().tickets[0].shippingAddress).toMatchObject({
+      name: "Austin Hanshew",
+      line1: "123 Jackpot Ave",
+      city: "Las Vegas",
+      state: "NV",
+      postalCode: "89101",
+      country: "US",
+    });
   });
 
   describe("admin", () => {
@@ -266,7 +352,7 @@ describe("routes", () => {
           method: "POST",
           url: "/buy-ticket",
           headers: auth(app),
-          payload: { poolId: "p_flash", chipColor: "white", shippingAddress: "x" },
+          payload: { poolId: "p_flash", chipColor: "white", shippingAddress: ADDRESS },
         });
         expect(buy.statusCode).toBe(200);
       }

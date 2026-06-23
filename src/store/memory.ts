@@ -130,9 +130,10 @@ export class MemoryStore implements DataStore {
         chipColor: input.chipColor,
         seatNumber,
         createdAt: now,
+        shippingAddress: { ...input.shippingAddress },
       };
       this.tickets.push(ticket);
-      batch.push({ ...ticket });
+      batch.push({ ...ticket, shippingAddress: { ...ticket.shippingAddress } });
     }
 
     pool.filled += seats;

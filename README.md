@@ -47,6 +47,9 @@ Ruleset enforced on every `/buy-ticket` (see `src/domain/economy.ts`):
 3. **Whale limit:** at most **one black chip per person per pool**.
 4. The user must hold at least one chip of the chosen color.
 5. The pool must have enough seats left for the claim (10 for a black chip).
+6. **A valid, deliverable shipping address is required** (prizes are physical
+   goods). The address is validated (`src/domain/address.ts`) and persisted with
+   the immutable ticket so a won prize can always be shipped.
 
 **Melting Odds:** `multiplier = capacity / filled`, e.g. a `185/500` pool yields
 `2.7x`. Surfaced on `/active-pools` as the Sales Agent surge alert.
@@ -94,7 +97,23 @@ a token for an arbitrary `userId`; it is **disabled when `NODE_ENV=production`**
 ```
 
 ### `POST /buy-ticket`
-Body: `{ "poolId": "p_weekly_tv", "chipColor": "blue", "shippingAddress": "..." }`
+Body:
+```json
+{
+  "poolId": "p_weekly_tv",
+  "chipColor": "blue",
+  "shippingAddress": {
+    "name": "Austin Hanshew",
+    "line1": "123 Jackpot Ave",
+    "line2": "Apt 4B",
+    "city": "Las Vegas",
+    "state": "NV",
+    "postalCode": "89101"
+  }
+}
+```
+A complete, valid US address is required (rejected with `422 INVALID_ADDRESS`
+otherwise) and is stored on the ticket so the prize can be delivered.
 ```json
 { "success": true, "ticketId": "tkt_secure_...", "seats": 1,
   "msg": "Ticket secured on the floor. [1] seats claimed." }
@@ -112,7 +131,7 @@ Body: `{ "poolId": "p_weekly_tv", "chipColor": "blue", "shippingAddress": "..." 
 
 Errors use a consistent shape: `{ "error": { "code": "WHALE_LIMIT_REACHED", "message": "..." } }`.
 Codes: `POOL_NOT_FOUND` (404), `POOL_CLOSED`/`POOL_FULL`/`POOL_ALREADY_DRAWN`/`POOL_NOT_DRAWABLE`/`NO_TICKETS`/`POOL_EXISTS` (409),
-`INVALID_CHIP_FOR_POOL` (422), `INSUFFICIENT_CHIPS` (402),
+`INVALID_CHIP_FOR_POOL`/`INVALID_ADDRESS` (422), `INSUFFICIENT_CHIPS` (402),
 `WHALE_LIMIT_REACHED`/`RATE_LIMITED` (429), `UNAUTHORIZED` (401), `VALIDATION_ERROR` (400).
 
 ## Configuration

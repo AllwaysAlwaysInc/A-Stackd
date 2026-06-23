@@ -1,5 +1,6 @@
 import type { TypeBoxTypeProvider } from "@fastify/type-provider-typebox";
 import type { FastifyInstance } from "fastify";
+import { parseShippingAddress } from "../domain/address.js";
 import {
   BuyTicketBodySchema,
   BuyTicketResponseSchema,
@@ -22,11 +23,14 @@ export function ticketRoutes(store: DataStore) {
       },
       async (request) => {
         const { poolId, chipColor, shippingAddress } = request.body;
+        // A chip cannot be spent without a valid, deliverable address: prizes
+        // are physical goods and must ship somewhere real.
+        const address = parseShippingAddress(shippingAddress);
         const result = await store.purchase({
           userId: request.userId,
           poolId,
           chipColor,
-          shippingAddress,
+          shippingAddress: address,
         });
         return {
           success: true,
