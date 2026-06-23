@@ -1,9 +1,12 @@
+import { randomInt } from "node:crypto";
 import { seatsForChip, type ChipColor, type ChipWallet } from "./chips.js";
 import {
   InsufficientChipsError,
   InvalidChipForPoolError,
+  PoolAlreadyDrawnError,
   PoolClosedError,
   PoolFullError,
+  PoolNotDrawableError,
   WhaleLimitError,
 } from "./errors.js";
 import { isPoolOpen, seatsRemaining, type Pool } from "./pools.js";
@@ -57,4 +60,25 @@ export function assertPurchaseAllowed(ctx: PurchaseContext): number {
   }
 
   return seats;
+}
+
+/**
+ * A pool may be drawn only once it is no longer accepting tickets — either it
+ * has filled to capacity or its close time has passed — and has not already
+ * been drawn.
+ */
+export function assertDrawable(pool: Pool, now: number): void {
+  if (pool.drawnAt !== undefined) {
+    throw new PoolAlreadyDrawnError(pool.poolId);
+  }
+  const closed = now >= pool.closesAt;
+  const full = seatsRemaining(pool) <= 0;
+  if (!closed && !full) {
+    throw new PoolNotDrawableError(pool.poolId);
+  }
+}
+
+/** Uniformly pick a winning index in [0, total). */
+export function pickWinnerIndex(total: number): number {
+  return randomInt(0, total);
 }

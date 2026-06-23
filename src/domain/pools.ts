@@ -16,6 +16,21 @@ export interface Pool {
   filled: number;
   /** Epoch millis when the pool stops accepting tickets. */
   closesAt: number;
+  /** Epoch millis when a winner was drawn, if any. */
+  drawnAt?: number;
+  winnerUserId?: string;
+  winningTicketId?: string;
+}
+
+/** Input accepted when an admin creates a pool. */
+export interface CreatePoolInput {
+  prize: string;
+  type: PoolType;
+  isGuaranteed: boolean;
+  requiredChip: ChipColor;
+  capacity: number;
+  closesAt: number;
+  poolId?: string;
 }
 
 /**
