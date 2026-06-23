@@ -197,18 +197,25 @@ interface UserRow {
 }
 
 function mapUser(row: UserRow): User {
-  return {
+  const user: User = {
     userId: row.user_id,
     email: row.email,
     passwordHash: row.password_hash,
     role: row.role as UserRole,
-    dateOfBirth: row.date_of_birth ?? undefined,
-    consentAt: row.consent_at ? Number(row.consent_at) : undefined,
     emailVerified: row.email_verified ?? false,
-    emailVerificationToken: row.email_verification_token,
-    passwordResetToken: row.password_reset_token,
-    passwordResetExpires: row.password_reset_expires ? Number(row.password_reset_expires) : null,
   };
+  if (row.date_of_birth != null) user.dateOfBirth = row.date_of_birth;
+  if (row.consent_at != null) user.consentAt = Number(row.consent_at);
+  if (row.email_verification_token !== undefined) {
+    user.emailVerificationToken = row.email_verification_token;
+  }
+  if (row.password_reset_token !== undefined) {
+    user.passwordResetToken = row.password_reset_token;
+  }
+  if (row.password_reset_expires !== undefined) {
+    user.passwordResetExpires = row.password_reset_expires ? Number(row.password_reset_expires) : null;
+  }
+  return user;
 }
 
 interface WalletRow {

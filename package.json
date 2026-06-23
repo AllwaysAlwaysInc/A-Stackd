@@ -29,7 +29,8 @@
     "bcryptjs": "^2.4.3",
     "fastify": "^5.3.2",
     "fastify-plugin": "^5.0.1",
-    "pg": "^8.22.0"
+    "pg": "^8.22.0",
+    "stripe": "^22.2.3"
   },
   "devDependencies": {
     "@eslint/js": "^9.25.1",

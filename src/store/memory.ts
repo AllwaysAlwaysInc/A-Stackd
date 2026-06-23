@@ -175,12 +175,8 @@ export class MemoryStore implements DataStore {
     const poolTickets = this.tickets.filter((ticket) => ticket.poolId === poolId);
     if (poolTickets.length === 0) throw new NoTicketsError(poolId);
 
-    let serverSeed = pool.serverSeed;
-    let serverSeedHash = pool.serverSeedHash;
-    if (!serverSeed) {
-      serverSeed = randomBytes(32).toString("hex");
-      serverSeedHash = createHash("sha256").update(serverSeed).digest("hex");
-    }
+    const serverSeed = pool.serverSeed || randomBytes(32).toString("hex");
+    const serverSeedHash = pool.serverSeedHash || createHash("sha256").update(serverSeed).digest("hex");
 
     const ticketIds = poolTickets.map((t) => t.id);
     const clientSeed = createHash("sha256").update(ticketIds.join(",")).digest("hex");

@@ -5,6 +5,14 @@ export const ChipColorSchema = Type.Union([
   Type.Literal("white"),
   Type.Literal("blue"),
   Type.Literal("black"),
+  Type.Literal("free"),
+]);
+
+export const StandardChipColorSchema = Type.Union([
+  Type.Literal("red"),
+  Type.Literal("white"),
+  Type.Literal("blue"),
+  Type.Literal("black"),
 ]);
 
 export const WalletResponseSchema = Type.Object({
@@ -48,7 +56,7 @@ export const PoolSchema = Type.Object({
   prize: Type.String(),
   type: Type.String(),
   isGuaranteed: Type.Boolean(),
-  requiredChip: ChipColorSchema,
+  requiredChip: StandardChipColorSchema,
   status: Type.String(),
   timeLeft: Type.String(),
   meltingMultiplier: Type.Number(),
@@ -96,7 +104,7 @@ export const CreatePoolBodySchema = Type.Object({
   prize: Type.String({ minLength: 1 }),
   type: PoolTypeSchema,
   isGuaranteed: Type.Boolean(),
-  requiredChip: ChipColorSchema,
+  requiredChip: StandardChipColorSchema,
   capacity: Type.Integer({ minimum: 1 }),
   closesAt: Type.Integer(),
   poolId: Type.Optional(Type.String({ minLength: 1 })),

@@ -2,8 +2,10 @@ import type { TypeBoxTypeProvider } from "@fastify/type-provider-typebox";
 import type { FastifyInstance } from "fastify";
 import { Type } from "@sinclair/typebox";
 import { randomUUID } from "node:crypto";
+import { Readable } from "node:stream";
 import type { DataStore } from "../store/types.js";
 import { type ChipColor } from "../domain/chips.js";
+import Stripe from "stripe";
 
 const CreateSessionBody = Type.Object({
   packId: Type.Union([
@@ -32,6 +34,8 @@ const PACKS: Record<string, PackDetails> = {
 export function paymentsRoutes(store: DataStore, isDev: boolean) {
   return async function (fastify: FastifyInstance) {
     const app = fastify.withTypeProvider<TypeBoxTypeProvider>();
+    const stripeSecretKey = process.env.STRIPE_SECRET_KEY;
+    const stripe = stripeSecretKey ? new Stripe(stripeSecretKey) : null;
 
     // Route to create a Stripe checkout session (falls back to mock session url)
     app.post(
@@ -42,6 +46,37 @@ export function paymentsRoutes(store: DataStore, isDev: boolean) {
         const userId = request.userId;
         const pack = PACKS[packId];
         if (!pack) throw new Error("Invalid packId");
+
+        if (stripe) {
+          const amountCents = Math.round(parseFloat(pack.price.replace("$", "")) * 100);
+          const session = await stripe.checkout.sessions.create({
+            payment_method_types: ["card"],
+            line_items: [
+              {
+                price_data: {
+                  currency: "usd",
+                  product_data: {
+                    name: pack.name,
+                    description: `Credits chips to your A Stack'd wallet: ${Object.entries(pack.chips)
+                      .map(([color, qty]) => `${qty} ${color}`)
+                      .join(", ")}`,
+                  },
+                  unit_amount: amountCents,
+                },
+                quantity: 1,
+              },
+            ],
+            mode: "payment",
+            metadata: {
+              packId,
+              userId,
+            },
+            client_reference_id: userId,
+            success_url: `astackd://payment-success?session_id={CHECKOUT_SESSION_ID}`,
+            cancel_url: `astackd://payment-cancel`,
+          });
+          return { url: session.url!, sessionId: session.id };
+        }
 
         const sessionId = `sess_${randomUUID().slice(0, 8)}`;
         const baseUrl = `${request.protocol}://${request.hostname}`;
@@ -194,25 +229,54 @@ export function paymentsRoutes(store: DataStore, isDev: boolean) {
     // Webhook route to receive payment confirmation
     app.post(
       "/payments/webhook",
+      {
+        preParsing: async (request, reply, payload) => {
+          const chunks: Buffer[] = [];
+          for await (const chunk of payload) {
+            chunks.push(chunk as Buffer);
+          }
+          const raw = Buffer.concat(chunks);
+          (request as any).rawBody = raw;
+          return Readable.from([raw]);
+        }
+      },
       async (request, reply) => {
+        const sig = request.headers["stripe-signature"] as string | undefined;
+        const webhookSecret = process.env.STRIPE_WEBHOOK_SECRET;
+
+        let event: Stripe.Event | null = null;
+        if (stripe && webhookSecret && sig) {
+          try {
+            event = stripe.webhooks.constructEvent((request as any).rawBody, sig, webhookSecret);
+          } catch (err: any) {
+            console.error(`[STRIPE WEBHOOK ERROR] ${err.message}`);
+            return reply.status(400).send({ error: `Webhook Error: ${err.message}` });
+          }
+        }
+
         // Support either real Stripe JSON hook or our mock HTML URL-encoded POST
         let sessionId = "";
         let packId = "";
         let userId = "";
 
-        const body = request.body as any;
-        if (body && typeof body === "object") {
-          // Check if it's the mock form submit
-          if (body.sessionId && body.packId && body.userId) {
-            sessionId = body.sessionId;
-            packId = body.packId;
-            userId = body.userId;
-          } else if (body.type === "checkout.session.completed") {
-            // Real Stripe event structure
-            const session = body.data.object;
+        if (event) {
+          if (event.type === "checkout.session.completed") {
+            const session = event.data.object as Stripe.Checkout.Session;
             sessionId = session.id;
-            userId = session.client_reference_id;
-            packId = session.metadata.packId;
+            userId = session.client_reference_id!;
+            packId = session.metadata?.packId!;
+          } else {
+            return { received: true };
+          }
+        } else {
+          const body = request.body as any;
+          if (body && typeof body === "object") {
+            // Check if it's the mock form submit
+            if (body.sessionId && body.packId && body.userId) {
+              sessionId = body.sessionId;
+              packId = body.packId;
+              userId = body.userId;
+            }
           }
         }
 

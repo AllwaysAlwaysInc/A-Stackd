@@ -10,6 +10,7 @@ import {
   UnauthorizedError
 } from "../domain/errors.js";
 import type { DataStore } from "../store/types.js";
+import { sendVerificationEmail, sendForgotPasswordEmail } from "../services/messaging.js";
 
 const BCRYPT_ROUNDS = 10;
 
@@ -99,6 +100,8 @@ export function authRoutes(store: DataStore, isProduction: boolean, welcomeChips
           emailVerificationToken,
         });
 
+        await sendVerificationEmail(email, emailVerificationToken);
+
         await store.getOrCreateWallet(user.userId);
         for (const color of CHIP_COLORS) {
           if (welcomeChips[color] > 0) {
@@ -148,6 +151,9 @@ export function authRoutes(store: DataStore, isProduction: boolean, welcomeChips
         const expires = Date.now() + 3600 * 1000; // 1 hour expiry
         const ok = await store.sendForgotPassword(email, token, expires);
         console.log(`[PASSWORD RESET] Forgot password token for ${email}: ${token}`);
+        if (ok) {
+          await sendForgotPasswordEmail(email, token);
+        }
         return { success: true, message: "If the email exists, a reset code has been sent." };
       }
     );
@@ -173,12 +179,15 @@ export function authRoutes(store: DataStore, isProduction: boolean, welcomeChips
       async (request) => {
         const user = await store.getUserById(request.userId);
         if (!user) throw new UnauthorizedError();
-        return {
+        const res: any = {
           userId: user.userId,
           email: user.email,
-          dateOfBirth: user.dateOfBirth,
           emailVerified: user.emailVerified ?? false,
         };
+        if (user.dateOfBirth !== undefined) {
+          res.dateOfBirth = user.dateOfBirth;
+        }
+        return res;
       }
     );
 
@@ -187,12 +196,15 @@ export function authRoutes(store: DataStore, isProduction: boolean, welcomeChips
       { schema: { body: UpdateProfileBody, response: { 200: ProfileResponse } } },
       async (request) => {
         const user = await store.updateProfile(request.userId, request.body);
-        return {
+        const res: any = {
           userId: user.userId,
           email: user.email,
-          dateOfBirth: user.dateOfBirth,
           emailVerified: user.emailVerified ?? false,
         };
+        if (user.dateOfBirth !== undefined) {
+          res.dateOfBirth = user.dateOfBirth;
+        }
+        return res;
       }
     );
 

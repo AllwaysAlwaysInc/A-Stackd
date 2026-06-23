@@ -9,6 +9,7 @@ import {
   timeLeftLabel,
 } from "../domain/pools.js";
 import type { DataStore } from "../store/types.js";
+import { sendFulfillmentEmail } from "../services/messaging.js";
 
 const ShipOrderBody = Type.Object({
   trackingNumber: Type.String({ minLength: 1 }),
@@ -84,6 +85,11 @@ export function adminRoutes(store: DataStore) {
       },
       async (request) => {
         const order = await store.shipOrder(request.params.orderId, request.body.trackingNumber);
+        const user = await store.getUserById(order.winner_user_id);
+        const pool = await store.getPool(order.pool_id);
+        if (user && user.email && pool) {
+          await sendFulfillmentEmail(user.email, pool.poolId, pool.prize, request.body.trackingNumber);
+        }
         return { success: true, order };
       }
     );
