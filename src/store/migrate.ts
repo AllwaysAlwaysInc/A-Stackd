@@ -9,6 +9,7 @@ async function main(): Promise<void> {
   }
   const store = new PostgresStore(config.databaseUrl);
   await store.migrate();
+  await store.seedDemoData();
   await store.close();
   console.log("A Stack'd schema migration complete.");
 }

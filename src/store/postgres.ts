@@ -5,6 +5,7 @@ import { assertDrawable, assertPurchaseAllowed, pickWinnerIndex } from "../domai
 import { NoTicketsError, PoolExistsError, PoolNotFoundError } from "../domain/errors.js";
 import type { CreatePoolInput, Pool } from "../domain/pools.js";
 import type { Ticket } from "../domain/tickets.js";
+import { seedPools } from "./seed.js";
 import type { DataStore, DrawResult, PurchaseInput, PurchaseResult } from "./types.js";
 
 const { Pool: PgPool } = pg;
@@ -187,6 +188,27 @@ export class PostgresStore implements DataStore {
     } catch (error) {
       if (isUniqueViolation(error)) throw new PoolExistsError(poolId);
       throw error;
+    }
+  }
+
+  /** Idempotently insert demo pools so a fresh deploy has visible content. */
+  async seedDemoData(now: number = Date.now()): Promise<void> {
+    for (const pool of seedPools(now)) {
+      await this.pool.query(
+        `INSERT INTO pools (pool_id, prize, type, is_guaranteed, required_chip, capacity, filled, closes_at)
+         VALUES ($1, $2, $3, $4, $5, $6, $7, $8)
+         ON CONFLICT (pool_id) DO NOTHING`,
+        [
+          pool.poolId,
+          pool.prize,
+          pool.type,
+          pool.isGuaranteed,
+          pool.requiredChip,
+          pool.capacity,
+          pool.filled,
+          pool.closesAt,
+        ],
+      );
     }
   }
 
